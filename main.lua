@@ -4,15 +4,21 @@ local baarit = {}
 
 local args = { ... }
 -- args[1] has filename
-local alue = tonumber(args[2] or 40000)      -- ha
-local hirviTiheys = tonumber(args[3] or 3.1) -- hirvi/1000ha
-local baariTiheys = tonumber(args[4] or 12)  -- baari/1000ha
-local vasaTiheys = tonumber(args[5] or 0.05) -- vasa/hirvi
-local time = tonumber(args[6] or 0)          -- tunti, mod 24 == 0 on keskiyö
+local alue = tonumber(args[2] or 40000)                       -- ha
+local hirviTiheys = tonumber(args[3] or 3.1)                  -- hirvi/1000ha
+local baariTiheys = tonumber(args[4] or 12)                   -- baari/1000ha
+local vasaTiheys = tonumber(args[5] or 0.05)                  -- vasa/hirvi
+local sleepReq = tonumber(args[6] or 8)                       -- tuntia
+local time = tonumber(args[7] or 0)                           -- tunti, mod 24 == 0 on keskiyö
+local dw, dh = tonumber(args[8] or 1), tonumber(args[9] or 1) -- dronen näkökentän ulottuvuudet
+
 
 local states = { eating = 1, sleeping = 2, resting = 3, wandering = 4, searching = 5 }
 
 local width = math.floor(math.sqrt(alue or 0) + .5)
+
+-- Drone, x, y, path (table)
+local drone = { width / 2, width / 2, {} }
 
 -- Magic numbers
 local minWSpeed, maxWSpeed = 100, 200 -- wandering speed, hm/h
@@ -20,11 +26,13 @@ local minSSpeed, maxSSpeed = 200, 400 -- search speed, hm/h
 local eatingSpeed = 10                -- minutes/minutes (minutes of food (energy) per minute of eating)
 local eatThreshold = 100              -- hunger level when moose starts eating
 local searchThreshold = 200           -- hunger level when moose starts searching for food
-local restChance = 0.1                -- chance to start resting while wandering
-local wanderChance = 0.1              -- chance to start wandering while resting
+local restChance = 0.1                -- chance to start resting while wandering (per minute)
+local wanderChance = 0.05             -- chance to start wandering while resting (per minute)
+local sleepChance = 0.05              -- chance to start sleeping after eating (per times done eating)
 
 
 function love.load()
+    print("Started program")
     do -- Generate baarit
         local baariLkm = alue / 1000 * baariTiheys
         for i = 1, baariLkm do
@@ -79,29 +87,39 @@ function love.update(_dt)
     end
     time = time + dt / 60
     for i, hirvi in ipairs(hirvet) do
-        -- Update hirvi movement
-        local nearestBar, secondNearestBar = hirvi:nearest(baarit)
-        local bar
-        if nearestBar == hirvi.last then bar = secondNearestBar else bar = nearestBar end
         -- Decrease/increase hunger
         if hirvi.state == states.eating then
-            hirvi.hunger = math.max(hirvi.hunger - eatingSpeed * dt, 0)
-            if hirvi.hunger == 0 then
-                hirvi.state = states.wandering
-                hirvi.direction = hirvi:randdir()
+            hirvi.hunger = hirvi.hunger - eatingSpeed * dt
+            if hirvi.hunger <= 0 then
+                if math.random(1000) / 1000 <= sleepChance then
+                    hirvi.state = states.sleeping
+                    hirvi.sleep = sleepReq * 60
+                else
+                    hirvi.state = states.wandering
+                    hirvi.direction = hirvi:randdir()
+                end
             end
         else
             hirvi.hunger = hirvi.hunger + 1 * dt
         end
 
-        if hirvi.state ~= states.sleeping and hirvi.state ~= states.resting then
+        if hirvi.state == states.sleeping then
+            hirvi.sleep = hirvi.sleep - dt
+            if hirvi.sleep <= 0 then
+                hirvi.state = states.resting
+            end
+            goto continue
+        end
+
+        local nearestBar, secondNearestBar = hirvi:nearest(baarit)
+        local bar
+        if nearestBar == hirvi.last then bar = secondNearestBar else bar = nearestBar end
+
+        if hirvi.state ~= states.resting then
             if nearestBar.distance < 1 then
                 if hirvi.hunger >= eatThreshold then
                     hirvi.state = states.eating
                     hirvi.direction = false
-                else
-                    hirvi.state = states.wandering
-                    hirvi.direction = hirvi:randdir()
                 end
                 hirvi.last = nearestBar
             else
@@ -138,20 +156,19 @@ function love.update(_dt)
             hirvi.x = bar.x
             hirvi.y = bar.y
         end
-        if hirvi.state == states.sleeping then
-            hirvi.sleep = math.max(0, hirvi.sleep - dt)
-            if hirvi.sleep == 0 then
-                hirvi.state = states.resting
-            end
-        end
         if hirvi.state == states.resting then
             if tick % (1 / dt) == 0 then
                 if math.random(1000) / 1000 <= wanderChance then
                     hirvi.direction = hirvi:randdir()
                     hirvi.state = states.wandering
+                    if math.random(1000) / 1000 <= sleepChance then
+                        hirvi.state = states.sleeping
+                        hirvi.sleep = sleepReq * 60 / 3
+                    end
                 end
             end
         end
+        ::continue::
     end
     if sleeptime then
         love.timer.sleep(sleeptime)
@@ -181,7 +198,7 @@ function Nearest(self, data)
     return q, w
 end
 
-local colors = { { 0, 0, 1 }, { 1, 0, 1 }, { 0.5, 0, 1 }, { 1, 0, 0 }, { 1, 1, 0 } }
+local colors = { { 0, 0, 1 }, { 1, 1, 1 }, { 0.5, 0, 1 }, { 1, 0, 0 }, { 1, 1, 0 } }
 function love.draw()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     local w2, h2 = w / 2, h / 2
@@ -195,12 +212,7 @@ function love.draw()
     end
     for i, v in ipairs(hirvet) do
         local x, y = w2 - h2 + v.x / width * h, h - v.y / width * h
-        love.graphics.setColor(0.8, 0.1, 0)
-        if v.amount == 2 then
-            love.graphics.setColor(0.8, 0.5, 0)
-        elseif v.amount == 3 then
-            love.graphics.setColor(0.8, 0.1, 0.5)
-        end
+        love.graphics.setColor(unpack(colors[v.state]))
         love.graphics.circle("fill", x, y, math.max(1, 0.6 * unit))
     end
     love.graphics.setColor(1, 1, 1)
