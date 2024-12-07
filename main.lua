@@ -4,13 +4,12 @@ local baarit = {}
 
 local args = { ... }
 -- args[1] has filename
-local alue = tonumber(args[2] or 40000)                       -- ha
-local hirviTiheys = tonumber(args[3] or 8)                    -- hirvi/1000ha
-local baariTiheys = tonumber(args[4] or 12)                   -- baari/1000ha
-local vasaTiheys = tonumber(args[5] or 0.05)                  -- vasa/hirvi
-local sleepReq = tonumber(args[6] or 8)                       -- tuntia
-local time = tonumber(args[7] or 0)                           -- tunti, mod 24 == 0 on keskiyö
-local dw, dh = tonumber(args[8] or 1), tonumber(args[9] or 1) -- dronen näkökentän ulottuvuudet (hm)
+local alue = tonumber(args[2] or 40000)      -- ha
+local hirviTiheys = tonumber(args[3] or 8)   -- hirvi/1000ha
+local baariTiheys = tonumber(args[4] or 12)  -- baari/1000ha
+local vasaTiheys = tonumber(args[5] or 0.05) -- vasa/hirvi
+local sleepReq = tonumber(args[6] or 8)      -- tuntia
+local time = tonumber(args[7] or 0)          -- tunti, mod 24 == 0 on keskiyö
 
 
 local states = { eating = 1, sleeping = 2, resting = 3, wandering = 4, searching = 5 }
@@ -18,7 +17,12 @@ local states = { eating = 1, sleeping = 2, resting = 3, wandering = 4, searching
 local width = math.floor(math.sqrt(alue or 0) + .5)
 
 -- Drone, x, y, path (table)
-local drone = { width / 2, width / 2, {} }
+local drone = { x = width / 2, y = width / 2, w = tonumber(args[8] or 10), h = tonumber(args[9] or 10), path = {}, waypoint = 1 } -- dronen näkökentän ulottuvuudet h,w on (hm)
+
+-- make waypoint mission
+for i = 1, 100 do
+    table.insert(drone.path, { math.random(0, width), math.random(0, width) })
+end
 
 -- Magic numbers
 local minWSpeed, maxWSpeed = 100, 200 -- wandering speed, hm/h
@@ -77,7 +81,7 @@ local sleeptime = false
 local sun = 0
 
 function love.update(_dt)
-    for runs = 1, 10 do
+    for runs = 1, 1 do
         tick = tick + 1
         --[[if time <= 24 then
             dt = 1 / 5
@@ -174,8 +178,24 @@ function love.update(_dt)
             end
             ::continue::
         end
+        do
+            -- move drone to next waypoint
+            local x, y = drone.x, drone.y
+            local wx, wy = drone.path[drone.waypoint][1], drone.path[drone.waypoint][2]
+            local dx, dy = wx - x, wy - y
+            local dist = math.sqrt(dx ^ 2 + dy ^ 2)
+            if dist < 1 then
+                drone.waypoint = drone.waypoint % #drone.path + 1
+            else
+                local speed = 1200
+                local d = math.min(speed * dt / 60, dist)
+                local dir = math.atan2(dx, dy)
+                drone.x = x + math.sin(dir) * d
+                drone.y = y + math.cos(dir) * d
+            end
+        end
         if sleeptime then
-            --love.timer.sleep(sleeptime)
+            love.timer.sleep(sleeptime)
         end
     end
 end
@@ -207,7 +227,7 @@ local colors = { { 0, 0, 1 }, { 1, 1, 1 }, { 0.5, 0, 1 }, { 1, 0, 0 }, { 1, 1, 0
 function love.draw()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     local w2, h2 = w / 2, h / 2
-    love.graphics.setColor(0.6, 0.6 - 0.2 * sun, 0.4)
+    love.graphics.setColor(0.6 - 0.2 * sun, 0.6 - 0.2 * sun, 0.5)
     love.graphics.rectangle("fill", w2 - h2, 0, h, h)
     love.graphics.setColor(0.2, 0.1, 1, 0.2)
     local unit = math.max(1, h / width)
@@ -220,6 +240,10 @@ function love.draw()
         love.graphics.setColor(unpack(colors[v.state]))
         love.graphics.circle("fill", x, y, math.max(1, 0.6 * unit))
     end
+    love.graphics.setColor(1, 1, 0, 0.5)
+    love.graphics.rectangle("fill", w2 - h2 + drone.x / width * h - unit / 2 * drone.w,
+        h - drone.y / width * h - unit / 2 * drone.h, unit * drone.w,
+        unit * drone.h)
     love.graphics.setColor(1, 1, 1)
-    love.graphics.print(time % 24, 0, 0)
+    love.graphics.print(time, 0, 0)
 end
