@@ -4,7 +4,7 @@ local baarit = {}
 
 local args = { ... }
 -- args[1] has filename
-local alue = tonumber(args[2] or 40000)      -- ha
+local alue = tonumber(args[2] or 80000)      -- ha
 local hirviTiheys = tonumber(args[3] or 8)   -- hirvi/1000ha
 local baariTiheys = tonumber(args[4] or 12)  -- baari/1000ha
 local vasaTiheys = tonumber(args[5] or 0.05) -- vasa/hirvi
@@ -17,15 +17,37 @@ local states = { eating = 1, sleeping = 2, resting = 3, wandering = 4, searching
 local width = math.floor(math.sqrt(alue or 0) + .5)
 
 -- Drone, x, y, path (table)
-local drone = { x = width / 2, y = width / 2, w = tonumber(args[8] or 10), h = tonumber(args[9] or 10), path = {}, waypoint = 1 } -- dronen näkökentän ulottuvuudet h,w on (hm)
+local drone = {
+    x = width / 2,
+    y = width / 2,
+    ws = false,
+    wl = false,
+    w = tonumber(args[8] or 10), -- dronen näkökentän ulottuvuudet (hm)
+    h = tonumber(args[9] or 10),
+    path = {},
+    waypoint = 1
+}
+drone.ws = drone.w -- ei tarvii säätää
 
--- make waypoint mission
-for i = 1, 100 do
-    table.insert(drone.path, { math.random(0, width), math.random(0, width) })
+do
+    -- make waypoint mission
+    local x, y = width / 2, width / 2
+    local dir, r = 0, 1
+    for i = 1, 10 do
+        -- do a spiral sweep
+        if not drone.wl then
+            x, y = x + i * r * drone.ws / 2 * math.sin(dir), y + i * r * drone.h / 2 * math.cos(dir)
+        else
+            x, y = x + drone.wl * 2 * math.sin(dir), y + i * r * drone.h / 2 * math.cos(dir)
+            x = math.min(math.max(x, -drone.wl), drone.wl)
+        end
+        dir = dir + math.pi / 2
+        drone.path[i] = { x, y }
+    end
 end
 
 -- Magic numbers
-local minWSpeed, maxWSpeed = 100, 200 -- wandering speed, hm/h
+local minWSpeed, maxWSpeed = 50, 150  -- wandering speed, hm/h
 local minSSpeed, maxSSpeed = 200, 400 -- search speed, hm/h
 local eatingSpeed = 10                -- minutes/minutes (minutes of food (energy) per minute of eating)
 local eatThreshold = 100              -- hunger level when moose starts eating
@@ -77,7 +99,7 @@ end
 
 local tick = 0
 local dt = 1 / 5
-local sleeptime = false
+local sleeptime = 1 / 5
 local sun = 0
 
 function love.update(_dt)
@@ -184,7 +206,7 @@ function love.update(_dt)
             local wx, wy = drone.path[drone.waypoint][1], drone.path[drone.waypoint][2]
             local dx, dy = wx - x, wy - y
             local dist = math.sqrt(dx ^ 2 + dy ^ 2)
-            if dist < 1 then
+            if dist < 2 then
                 drone.waypoint = drone.waypoint % #drone.path + 1
             else
                 local speed = 1200
@@ -244,6 +266,10 @@ function love.draw()
     love.graphics.rectangle("fill", w2 - h2 + drone.x / width * h - unit / 2 * drone.w,
         h - drone.y / width * h - unit / 2 * drone.h, unit * drone.w,
         unit * drone.h)
+    for i, v in ipairs(drone.path) do
+        local x, y = w2 - h2 + v[1] / width * h, h - v[2] / width * h
+        love.graphics.circle("fill", x, y, 1 * unit)
+    end
     love.graphics.setColor(1, 1, 1)
     love.graphics.print(time, 0, 0)
 end
