@@ -2,14 +2,13 @@ local hirvet = {}
 -- Baari (paikka missä hirvi syö/juo) on sijainti x, y
 local baarit = {}
 
-local args = { ... }
--- args[1] has filename
-local alue = tonumber(args[2] or 80000)          -- ha
-local hirviTiheys = tonumber(args[3] or math.pi) -- hirvi/1000ha
-local baariTiheys = tonumber(args[4] or 12)      -- baari/1000ha
-local vasaTiheys = tonumber(args[5] or 0.05)     -- vasa/hirvi
-local sleepReq = tonumber(args[6] or 8)          -- tuntia
-local time = tonumber(args[7] or 0)              -- tunti, mod 24 == 0 on keskiyö
+local alue = 80000          -- ha
+local hirviTiheys = math.pi -- hirvi/1000ha
+local baariTiheys = 12      -- baari/1000ha
+local vasaTiheys = 0.05     -- vasa/hirvi
+local sleepReq = 8          -- tuntia
+local startTime = 12        -- tunti, mod 24 == 0 on keskiyö
+local droneSpeed = 300      -- hm/h
 
 
 local states = { eating = 1, sleeping = 2, resting = 3, wandering = 4, searching = 5 }
@@ -22,8 +21,8 @@ local drone = {
     y = width / 2,
     ws = false,
     wl = false,
-    w = tonumber(args[8] or 10), -- dronen näkökentän ulottuvuudet (hm)
-    h = tonumber(args[9] or 10),
+    w = 3, -- dronen näkökentän ulottuvuudet (hm)
+    h = 3,
     path = {},
     waypoint = 1,
     count = 0,     -- nähdyt hirvet
@@ -84,8 +83,8 @@ function love.load()
     do
         -- make waypoint mission
         local x, y = width / 2, width / 2
-        local dir, r = 0, 1
-        for i = 1, 20 do
+        local dir, r, i = 0, 1, 1
+        while x > drone.w * 2 and x < width - drone.w * 2 and y > drone.h * 2 and y < width - drone.h * 2 do
             -- do a spiral sweep
             if not drone.wl then
                 x, y = x + i * r * drone.ws / 2 * math.sin(dir), y + i * r * drone.h / 2 * math.cos(dir)
@@ -95,6 +94,7 @@ function love.load()
             end
             dir = dir + math.pi / 2
             drone.path[i] = { x, y }
+            i = i + 1
         end
     end
 
@@ -103,11 +103,14 @@ end
 
 local tick = 0
 local dt = 1 / 5
-local sleeptime = 1 / 10
+local sleeptime = 1 / 60
 local sun = 0
+
+local time = startTime - 2
 
 function love.update(_dt)
     for runs = 1, 1 do
+        local isFirstDay = time - startTime < 0
         tick = tick + 1
         --[[if time <= 24 then
             dt = 1 / 5
@@ -128,13 +131,16 @@ function love.update(_dt)
         }
         for _, hirvi in ipairs(hirvet) do
             -- Check if hirvi is in drone's view using droneCorner
-            local detected =
-                hirvi.x >= droneCorners[1][1]
-                and hirvi.x <= droneCorners[2][1]
-                and hirvi.y <= droneCorners[1][2]
-                and hirvi.y >= droneCorners[4][2]
+            local detected = false
+            if not isFirstDay then
+                detected =
+                    hirvi.x >= droneCorners[1][1]
+                    and hirvi.x <= droneCorners[2][1]
+                    and hirvi.y <= droneCorners[1][2]
+                    and hirvi.y >= droneCorners[4][2]
 
-            if detected and not hirvi.detected then drone.count = drone.count + hirvi.amount end
+                if detected and not hirvi.detected then drone.count = drone.count + hirvi.amount end
+            end
             hirvi.detected = detected
 
             -- Decrease/increase hunger
@@ -220,24 +226,26 @@ function love.update(_dt)
             end
             ::continue::
         end
-        do
-            -- move drone to next waypoint
-            ::sus::
-            local x, y = drone.x, drone.y
-            local wx, wy = drone.path[drone.waypoint][1], drone.path[drone.waypoint][2]
-            local dx, dy = wx - x, wy - y
-            local dist = math.sqrt(dx ^ 2 + dy ^ 2)
-            if dist < 2 then
-                drone.waypoint = drone.waypoint % #drone.path + 1
-                goto sus
-            end
-            local speed = 1200
-            local d = math.min(speed * dt / 60, dist)
-            local gox, goy = dx / dist * d, dy / dist * d
-            drone.x = x + gox
-            drone.y = y + goy
+        if not isFirstDay then
+            do
+                -- move drone to next waypoint
+                ::sus::
+                local x, y = drone.x, drone.y
+                local wx, wy = drone.path[drone.waypoint][1], drone.path[drone.waypoint][2]
+                local dx, dy = wx - x, wy - y
+                local dist = math.sqrt(dx ^ 2 + dy ^ 2)
+                if dist < 2 then
+                    drone.waypoint = drone.waypoint % #drone.path + 1
+                    goto sus
+                end
+                local speed = droneSpeed
+                local d = math.min(speed * dt / 60, dist)
+                local gox, goy = dx / dist * d, dy / dist * d
+                drone.x = x + gox
+                drone.y = y + goy
 
-            drone.area = drone.area + math.abs(gox) * drone.h + math.abs(goy) * drone.w
+                drone.area = drone.area + math.abs(gox) * drone.h + math.abs(goy) * drone.w
+            end
         end
         if sleeptime then
             love.timer.sleep(sleeptime)
