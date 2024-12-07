@@ -14,6 +14,16 @@ local states = { eating = 1, sleeping = 2, resting = 3, wandering = 4, searching
 
 local width = math.floor(math.sqrt(alue or 0) + .5)
 
+-- Magic numbers
+local minWSpeed, maxWSpeed = 100, 200 -- wandering speed, hm/h
+local minSSpeed, maxSSpeed = 200, 400 -- search speed, hm/h
+local eatingSpeed = 10                -- minutes/minutes (minutes of food (energy) per minute of eating)
+local eatThreshold = 100              -- hunger level when moose starts eating
+local searchThreshold = 200           -- hunger level when moose starts searching for food
+local restChance = 0.1                -- chance to start resting while wandering
+local wanderChance = 0.1              -- chance to start wandering while resting
+
+
 function love.load()
     do -- Generate baarit
         local baariLkm = alue / 1000 * baariTiheys
@@ -35,10 +45,10 @@ function love.load()
                 {
                     x = (baari.x + math.random(-100, 100) / 10) % width,
                     y = (baari.y + math.random(-100, 100) / 10) % width,
-                    speed1 = math.random(200, 400), -- search hm/h
-                    speed2 = math.random(100, 200), -- wandering hm/h
+                    speed1 = math.random(minSSpeed, maxSSpeed), -- search hm/h
+                    speed2 = math.random(minWSpeed, maxWSpeed), -- wandering hm/h
                     direction = false,
-                    sleep = 0,                      -- minuutteina
+                    sleep = 0,                                  -- minuutteina
                     state = states.wandering,
                     amount = (1 + vasaAmount),
                     hunger = math.random(0, 300),
@@ -53,12 +63,16 @@ function love.load()
     love.window.setMode(width * 6, width * 5, { resizable = true, vsync = false })
 end
 
+local tick = 0
+
 function love.update(_dt)
-    local dt = 1 / 60
-    local sleeptime = 0
+    tick = tick + 1
+
+    local dt
+    local sleeptime
     if time <= 24 then
         dt = 1 / 5
-        sleeptime = 0
+        sleeptime = false
     else
         dt = 1 / 60
         sleeptime = 0.01
@@ -71,7 +85,7 @@ function love.update(_dt)
         if nearestBar == hirvi.last then bar = secondNearestBar else bar = nearestBar end
         -- Decrease/increase hunger
         if hirvi.state == states.eating then
-            hirvi.hunger = math.max(hirvi.hunger - 10 * dt, 0)
+            hirvi.hunger = math.max(hirvi.hunger - eatingSpeed * dt, 0)
             if hirvi.hunger == 0 then
                 hirvi.state = states.wandering
                 hirvi.direction = hirvi:randdir()
@@ -82,7 +96,7 @@ function love.update(_dt)
 
         if hirvi.state ~= states.sleeping and hirvi.state ~= states.resting then
             if nearestBar.distance < 1 then
-                if hirvi.hunger >= 100 then
+                if hirvi.hunger >= eatThreshold then
                     hirvi.state = states.eating
                     hirvi.direction = false
                 else
@@ -91,7 +105,7 @@ function love.update(_dt)
                 end
                 hirvi.last = nearestBar
             else
-                if hirvi.hunger >= 200 and hirvi.state ~= states.searching then
+                if hirvi.hunger >= searchThreshold and hirvi.state ~= states.searching then
                     hirvi.state = states.searching
                     hirvi.direction = math.atan2(bar.bar.x - hirvi.x, bar.bar.y - hirvi.y)
                 end
@@ -102,9 +116,11 @@ function love.update(_dt)
         if hirvi.state == states.wandering then
             hirvi.direction = hirvi:randdir()
             speed = hirvi.speed2
-            if math.random(10) == 1 then
-                hirvi.direction = false
-                hirvi.state = states.resting
+            if tick % (1 / dt) == 0 then
+                if math.random(1000) / 1000 <= restChance then
+                    hirvi.direction = false
+                    hirvi.state = states.resting
+                end
             end
         else
             speed = hirvi.speed1
@@ -129,13 +145,17 @@ function love.update(_dt)
             end
         end
         if hirvi.state == states.resting then
-            if math.random(20) == 1 then
-                hirvi.direction = hirvi:randdir()
-                hirvi.state = states.wandering
+            if tick % (1 / dt) == 0 then
+                if math.random(1000) / 1000 <= wanderChance then
+                    hirvi.direction = hirvi:randdir()
+                    hirvi.state = states.wandering
+                end
             end
         end
     end
-    love.timer.sleep(sleeptime)
+    if sleeptime then
+        love.timer.sleep(sleeptime)
+    end
 end
 
 function RandomDirection(hirvi)
@@ -171,7 +191,7 @@ function love.draw()
     local unit = math.max(1, h / width)
     for i, v in ipairs(baarit) do
         local x, y = w2 - h2 + v.x / width * h, h - v.y / width * h
-        love.graphics.rectangle("fill", x - unit, y - unit, unit * 0.5, unit * 0.5)
+        love.graphics.rectangle("fill", x - unit, y - unit, unit * 2, unit * 2)
     end
     for i, v in ipairs(hirvet) do
         local x, y = w2 - h2 + v.x / width * h, h - v.y / width * h
@@ -181,8 +201,8 @@ function love.draw()
         elseif v.amount == 3 then
             love.graphics.setColor(0.8, 0.1, 0.5)
         end
-        love.graphics.circle("fill", x, y, math.max(1, 0.3 * unit))
+        love.graphics.circle("fill", x, y, math.max(1, 0.6 * unit))
     end
     love.graphics.setColor(1, 1, 1)
-    love.graphics.print(time / 24, 0, 0)
+    love.graphics.print(time, 0, 0)
 end
