@@ -108,8 +108,8 @@ function love.load()
 end
 
 local tick = 0
-local simulationAccuracy = 1 / 60 -- lower is more accurate
-local sleeptime = nil             --1 / 60
+local simulationAccuracy = 1 / 5 -- lower is more accurate
+local sleeptime = nil            --1 / 60
 local sun = 0
 
 local time = startTime - 2
@@ -118,9 +118,8 @@ function love.update(dt)
     if paused then
         return
     end
-    local runsToDo = math.ceil(simulationAccuracy * timeScale / dt)
-    dt = simulationAccuracy * timeScale
-    for runs = 1, runsToDo do
+    dt = math.min(dt * timeScale, simulationAccuracy)
+    for runs = 1, math.ceil(dt / simulationAccuracy) * math.min(1 / dt * simulationAccuracy * 60, 60) do
         local isFirstDay = time - startTime < 0
         tick = tick + 1
         --[[if time <= 24 then
@@ -175,82 +174,82 @@ function love.update(dt)
                 if hirvi.sleep <= 0 then
                     hirvi.state = states.resting
                 end
-                goto continue
-            end
-
-            local nearestBar, secondNearestBar = hirvi:nearest(baarit)
-            local bar
-            if nearestBar == hirvi.last then bar = secondNearestBar else bar = nearestBar end
-
-            if hirvi.state ~= states.resting then
-                if nearestBar.distance < 1 then
-                    if hirvi.hunger >= eatThreshold then
-                        hirvi.state = states.eating
-                        hirvi.direction = false
-                    end
-                    hirvi.last = nearestBar
-                else
-                    if hirvi.hunger >= searchThreshold and hirvi.state ~= states.searching then
-                        hirvi.state = states.searching
-                        hirvi.direction = math.atan2(bar.bar.x - hirvi.x, bar.bar.y - hirvi.y)
-                    end
-                end
-            end
-
-            local speed
-            if hirvi.state == states.wandering then
-                hirvi.direction = hirvi:randdir()
-                speed = hirvi.speed2
-                if tick % (1 / dt) == 0 then
-                    if math.random(1000) / 1000 <= restChance then
-                        hirvi.direction = false
-                        hirvi.state = states.resting
-                    end
-                end
             else
-                speed = hirvi.speed1
-            end
-            if hirvi.direction and hirvi.state >= 4 then
-                local dx, dy = math.sin(hirvi.direction) * speed * dt / 60, math.cos(hirvi.direction) * speed * dt / 60
-                if hirvi.x + dx >= width or hirvi.x + dx < 0 or hirvi.y + dy >= width or hirvi.y + dy < 0 then
-                    hirvi.direction = false
-                    hirvi.direction = hirvi:randdir()
-                else
-                    hirvi.x = hirvi.x + dx
-                    hirvi.y = hirvi.y + dy
+                local nearestBar, secondNearestBar = hirvi:nearest(baarit)
+                local bar
+                if nearestBar == hirvi.last then bar = secondNearestBar else bar = nearestBar end
+
+                if hirvi.state ~= states.resting then
+                    if nearestBar and nearestBar.distance < 1 then
+                        if hirvi.hunger >= eatThreshold then
+                            hirvi.state = states.eating
+                            hirvi.direction = false
+                        end
+                        hirvi.last = nearestBar
+                    else
+                        if nearestBar and hirvi.hunger >= searchThreshold and hirvi.state ~= states.searching then
+                            hirvi.state = states.searching
+                            hirvi.direction = math.atan2(bar.bar.x - hirvi.x, bar.bar.y - hirvi.y)
+                        end
+                    end
                 end
-            elseif hirvi.state == 5 and hirvi.hunger >= bar.r / speed then
-                hirvi.x = bar.x
-                hirvi.y = bar.y
-            end
-            if hirvi.state == states.resting then
-                if tick % (1 / dt) == 0 then
-                    if math.random(1000) / 1000 <= wanderChance then
+
+                local speed
+                if hirvi.state == states.wandering then
+                    hirvi.direction = hirvi:randdir()
+                    speed = hirvi.speed2
+                    if tick % (1 / dt) == 0 then
+                        if math.random(1000) / 1000 <= restChance then
+                            hirvi.direction = false
+                            hirvi.state = states.resting
+                        end
+                    end
+                else
+                    speed = hirvi.speed1
+                end
+                if hirvi.direction and hirvi.state >= 4 then
+                    local dx, dy = math.sin(hirvi.direction) * speed * dt / 60,
+                        math.cos(hirvi.direction) * speed * dt / 60
+                    if hirvi.x + dx >= width or hirvi.x + dx < 0 or hirvi.y + dy >= width or hirvi.y + dy < 0 then
+                        hirvi.direction = false
                         hirvi.direction = hirvi:randdir()
-                        hirvi.state = states.wandering
-                        if math.random(1000) / 1000 <= sleepChance then
-                            hirvi.state = states.sleeping
-                            hirvi.sleep = sleepReq * 60 / 3 * eep
+                    else
+                        hirvi.x = hirvi.x + dx
+                        hirvi.y = hirvi.y + dy
+                    end
+                elseif hirvi.state == 5 and bar and speed and hirvi.hunger >= (bar.r or 1) / speed then
+                    hirvi.x = bar.bar.x
+                    hirvi.y = bar.bar.y
+                end
+                if hirvi.state == states.resting then
+                    if tick % (1 / dt) == 0 then
+                        if math.random(1000) / 1000 <= wanderChance then
+                            hirvi.direction = hirvi:randdir()
+                            hirvi.state = states.wandering
+                            if math.random(1000) / 1000 <= sleepChance then
+                                hirvi.state = states.sleeping
+                                hirvi.sleep = sleepReq * 60 / 3 * eep
+                            end
                         end
                     end
                 end
             end
-            ::continue::
         end
         if not isFirstDay then
             do
                 -- move drone to next waypoint
-                ::sus::
                 local x, y = drone.x, drone.y
                 local wx, wy = drone.path[drone.waypoint][1], drone.path[drone.waypoint][2]
                 local dx, dy = wx - x, wy - y
                 local dist = math.sqrt(dx ^ 2 + dy ^ 2)
-                if dist < 2 then
+                while dist < 2 do
                     drone.waypoint = drone.waypoint % #drone.path + 1
                     if drone.waypoint == 1 then
                         drone.laps = (drone.laps or 0) + 1
                     end
-                    goto sus
+                    wx, wy = drone.path[drone.waypoint][1], drone.path[drone.waypoint][2]
+                    dx, dy = wx - x, wy - y
+                    dist = math.sqrt(dx ^ 2 + dy ^ 2)
                 end
                 local speed = droneSpeed
                 local d = math.min(speed * dt / 60, dist)
@@ -294,10 +293,10 @@ local colors = { { 0, 0, 1 }, { 1, 1, 1 }, { 0.5, 0, 1 }, { 1, 0, 0 }, { 1, 1, 0
 function love.keypressed(key)
     if key == "space" then
         paused = not paused
-    elseif key == "kp+" or key == "=" or key == "+" then
-        timeScale = math.min(timeScale * 2, 8)
-    elseif key == "kp-" or key == "-" or key == "_" then
-        timeScale = math.max(timeScale / 2, 0.25)
+    elseif key == "up" then
+        timeScale = math.min(timeScale * 2, 64)
+    elseif key == "down" then
+        timeScale = math.max(timeScale / 2, 1 / 16)
     elseif key == "h" then
         showHUD = not showHUD
     end
@@ -334,7 +333,7 @@ function love.draw()
         local hh = math.floor(tod)
         local mm = math.floor((tod - hh) * 60 + 0.5)
         love.graphics.setColor(1, 1, 1)
-        love.graphics.print("Controls: [H] = HUD, [Space] = Pause, [+/-] = Speed", 8, 8)
+        love.graphics.print("Controls: [H] = HUD, [Space] = Pause, [up/down] = Speed", 8, 8)
         love.graphics.print("Paused: " .. tostring(paused), 8, 28)
         love.graphics.print("Moose total (sim): " .. #hirvet, 8, 48)
         love.graphics.print(
