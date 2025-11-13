@@ -63,7 +63,7 @@ Perustele simulaatiomallilla, kuinka tarkka mittauksenne on erilaisilla hirvimä
    - Run: `luajit crunch.lua [parameters]`  
    - Example parameters: `luajit crunch.lua 80000 3.1 12 0 1200 10 10 2`  
      - These parameters represent area, moose density, feeding site density, start time, drone speed, view width/height, and simulation duration.
-   - The script prints out detection statistics. Use different sets of parameters to compare accuracy.
+   - The script prints out detection statistics for 100 simulated runs. Use different sets of parameters to compare accuracy.
 
 4. **Batch Runs (run.lua):**  
    - Create a parameter file listing various parameter sets line by line.  
@@ -97,6 +97,9 @@ Perustele simulaatiomallilla, kuinka tarkka mittauksenne on erilaisilla hirvimä
 
 - **Drone "View Cone" Dimensions (w, h):**  
   - **Unit:** hectometers (hm)
+
+- **Flight duration:**
+  - **Unit:** days (24h)
 
 Because the simulation uses a coordinate system where 1 unit of area = 1 ha and 1 unit of length = 1 hm, these units allow straightforward calculations. Distances and drone coverage are in hm, while area-related densities are conveniently expressed in ha.
 

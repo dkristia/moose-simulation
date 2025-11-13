@@ -4,7 +4,7 @@ local baarit = {}
 
 local alue = 80000          -- ha
 local hirviTiheys = math.pi -- hirvi/1000ha
-local baariTiheys = 12      -- baari/1000ha
+local baariTiheys = 4       -- baari/1000ha
 local vasaTiheys = 0.05     -- vasa/hirvi
 local sleepReq = 8          -- tuntia
 local startTime = 12        -- tunti, mod 24 == 0 on keskiyö
@@ -27,6 +27,7 @@ local drone = {
     waypoint = 1,
     count = 0,     -- nähdyt hirvet
     area = 0,      -- alue tarkastettu (ha)
+    laps = 1,      -- kuinka monennetta kertaa drone kulkee koko reitin
 }
 drone.ws = drone.w -- ei tarvii säätää
 drone.area = drone.w * drone.h
@@ -40,6 +41,11 @@ local searchThreshold = 200           -- hunger level when moose starts searchin
 local restChance = 0.1                -- chance to start resting while wandering (per minute)
 local wanderChance = 0.05             -- chance to start wandering while resting (per minute)
 local sleepChance = 0.05              -- chance to start sleeping after eating (per times done eating)
+
+-- UI / simulation controls
+local paused = false
+local timeScale = 1 -- 1x simulation speed
+local showHUD = true
 
 
 function love.load()
@@ -102,14 +108,19 @@ function love.load()
 end
 
 local tick = 0
-local dt = 1 / 5
-local sleeptime = 1 / 60
+local simulationAccuracy = 1 / 60 -- lower is more accurate
+local sleeptime = nil             --1 / 60
 local sun = 0
 
 local time = startTime - 2
 
-function love.update(_dt)
-    for runs = 1, 1 do
+function love.update(dt)
+    if paused then
+        return
+    end
+    local runsToDo = math.ceil(simulationAccuracy * timeScale / dt)
+    dt = simulationAccuracy * timeScale
+    for runs = 1, runsToDo do
         local isFirstDay = time - startTime < 0
         tick = tick + 1
         --[[if time <= 24 then
@@ -236,6 +247,9 @@ function love.update(_dt)
                 local dist = math.sqrt(dx ^ 2 + dy ^ 2)
                 if dist < 2 then
                     drone.waypoint = drone.waypoint % #drone.path + 1
+                    if drone.waypoint == 1 then
+                        drone.laps = (drone.laps or 0) + 1
+                    end
                     goto sus
                 end
                 local speed = droneSpeed
@@ -277,12 +291,24 @@ function Nearest(self, data)
 end
 
 local colors = { { 0, 0, 1 }, { 1, 1, 1 }, { 0.5, 0, 1 }, { 1, 0, 0 }, { 1, 1, 0 } }
+function love.keypressed(key)
+    if key == "space" then
+        paused = not paused
+    elseif key == "kp+" or key == "=" or key == "+" then
+        timeScale = math.min(timeScale * 2, 8)
+    elseif key == "kp-" or key == "-" or key == "_" then
+        timeScale = math.max(timeScale / 2, 0.25)
+    elseif key == "h" then
+        showHUD = not showHUD
+    end
+end
+
 function love.draw()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     local w2, h2 = w / 2, h / 2
-    love.graphics.setColor(0.6 - 0.2 * sun, 0.6 - 0.2 * sun, 0.5)
+    love.graphics.setColor(0.4 - 0.2 * sun, 0.6 - 0.1 * sun, 0.5 - 0.1 * sun)
     love.graphics.rectangle("fill", w2 - h2, 0, h, h)
-    love.graphics.setColor(0.2, 0.1, 1, 0.2)
+    love.graphics.setColor(0.1, 0.5, 0.3, 0.8)
     local unit = math.max(1, h / width)
     for i, v in ipairs(baarit) do
         local x, y = w2 - h2 + v.x / width * h, h - v.y / width * h
@@ -291,7 +317,7 @@ function love.draw()
     for i, v in ipairs(hirvet) do
         local x, y = w2 - h2 + v.x / width * h, h - v.y / width * h
         love.graphics.setColor(unpack(colors[v.state]))
-        love.graphics.circle("fill", x, y, math.max(1, 0.6 * unit))
+        love.graphics.circle("fill", x, y, math.max(1, 1 * unit))
     end
     love.graphics.setColor(1, 1, 0, 0.5)
     love.graphics.rectangle("fill", w2 - h2 + drone.x / width * h - unit / 2 * drone.w,
@@ -301,9 +327,53 @@ function love.draw()
         local x, y = w2 - h2 + v[1] / width * h, h - v[2] / width * h
         love.graphics.circle("fill", x, y, 1 * unit)
     end
-    love.graphics.setColor(1, 1, 1)
-    love.graphics.print(time, 0, 0)
-    love.graphics.print(drone.count, 0, 10)
-    love.graphics.print(drone.area, 0, 20)
-    love.graphics.print(1000 * drone.count / drone.area, 0, 30)
+    if showHUD then
+        -- HUD: Day, time, stats
+        local day = math.floor(time / 24) + 1
+        local tod = time % 24
+        local hh = math.floor(tod)
+        local mm = math.floor((tod - hh) * 60 + 0.5)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.print("Controls: [H] = HUD, [Space] = Pause, [+/-] = Speed", 8, 8)
+        love.graphics.print("Paused: " .. tostring(paused), 8, 28)
+        love.graphics.print("Moose total (sim): " .. #hirvet, 8, 48)
+        love.graphics.print(
+            string.format("Day %d  %02d:%02d  (scale: %.2fx)", day, hh, mm, timeScale), 8, 68)
+        love.graphics.print(
+            string.format("Laps: %d", (drone.laps or 0)), 8, 88)
+        local per_lap_detect = drone.count / drone.laps
+        local per_lap_area = drone.area / drone.laps
+        local percent_area = (alue > 0 and 100 * drone.area / alue or 0)
+        local estimate = (drone.area > 0 and 1000 * drone.count / drone.area or 0)
+        love.graphics.print(
+            string.format("Detected total: %d  (%.2f / lap)", drone.count, per_lap_detect), 8, 108)
+        love.graphics.print(
+            string.format("Area surveyed: %.1f ha (%.1f%%)  (%.1f ha/lap)", drone.area, percent_area, per_lap_area), 8,
+            128)
+        love.graphics.print(
+            string.format("Estimate (moose/1000ha): %.1f", estimate), 8, 148)
+        love.graphics.print("FPS: " .. love.timer.getFPS(), 8, 168)
+        -- Color explanations
+        local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+        local lx = sw - 220
+        local ly = 12
+        local ofs = 20
+        local statesLabels = { "Eating", "Sleeping", "Resting", "Wandering", "Searching" }
+        love.graphics.setColor(0, 0, 0, 0.45)
+        love.graphics.rectangle("fill", lx - 8, ly - 6, 212, 30 + (#statesLabels) * ofs, 6)
+        love.graphics.setColor(1, 1, 1)
+        for i = 1, #statesLabels do
+            love.graphics.setColor(unpack(colors[i]))
+            love.graphics.circle("fill", lx + 10, ly + ofs - 6 + (i - 1) * 16, 6)
+            love.graphics.setColor(1, 1, 1)
+            love.graphics.print(statesLabels[i], lx + 24, ly + ofs - 12 + (i - 1) * 16)
+        end
+        love.graphics.setColor(1, 1, 0)
+        love.graphics.rectangle("fill", lx + 10 - 6, ly + ofs - 6 - 4 + (#statesLabels) * 16, 12, 8)
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.print("Drone view", lx + 24, ly + ofs - 12 + (#statesLabels) * 16)
+    else
+        love.graphics.setColor(1, 1, 1)
+        love.graphics.print("Press H to show HUD", 8, 8)
+    end
 end
